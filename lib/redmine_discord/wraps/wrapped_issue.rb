@@ -61,7 +61,7 @@ module RedmineDiscord
         old_value = @issue.description_was.to_s.strip
 
         if new_value != old_value
-          description_diff = "```diff\n- #{truncate_text(old_value, DIFF_LIMIT / 2)}\n+ #{truncate_text(new_value, DIFF_LIMIT / 2)}```"
+          description_diff = format_diff(old_value, new_value)
           EmbedObjects::EmbedField.new(attribute_root_name, description_diff, false).to_hash
         end
       when 'parent'
@@ -75,10 +75,32 @@ module RedmineDiscord
       end
     end
 
+    def format_diff(old_text, new_text)
+      old_lines = old_text.lines.map { |line| "- #{line.strip}" }
+      new_lines = new_text.lines.map { |line| "+ #{line.strip}" }
+
+      diff_output = (old_lines + new_lines).join("\n")
+      truncated_diff = truncate_text(diff_output, DIFF_LIMIT)
+
+      "```diff\n#{truncated_diff}\n```"
+    end
+
     def truncate_text(text, max_length)
       return text if text.length <= max_length
 
-      "#{text[0, max_length]} [...]"
+      lines = text.lines
+      truncated_lines = []
+
+      total_length = 0
+      lines.each do |line|
+        break if total_length + line.length > max_length
+
+        truncated_lines << line
+        total_length += line.length
+      end
+
+      truncated_lines << "[...]" if total_length < text.length
+      truncated_lines.join
     end
 
     def value_for(attribute_name)
