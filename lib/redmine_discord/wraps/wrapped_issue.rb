@@ -56,7 +56,7 @@ module RedmineDiscord
       return nil if new_value == old_value
 
       case attribute_root_name
-      when 'description'
+      when 'Description'
         new_value = @issue.description.to_s.strip
         old_value = @issue.description_was.to_s.strip
 
@@ -64,7 +64,7 @@ module RedmineDiscord
           description_diff = format_diff(old_value, new_value)
           EmbedObjects::EmbedField.new(attribute_root_name, description_diff, false).to_hash
         end
-      when 'parent'
+      when 'Parent'
         new_value, old_value = [new_value, old_value].map do |issue|
           issue.blank? ? '`N/A`' : "[##{issue.id}](#{url_of(issue.id)})"
         end
