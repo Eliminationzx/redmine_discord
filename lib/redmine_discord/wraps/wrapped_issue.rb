@@ -2,6 +2,9 @@ require_relative '../embed_objects/embed_field'
 
 module RedmineDiscord
   class Wraps::WrappedIssue
+    DESCRIPTION_LIMIT = 1000
+    DIFF_LIMIT = 1000
+
     def initialize(issue)
       @issue = issue
     end
@@ -11,10 +14,12 @@ module RedmineDiscord
     end
 
     def to_description_field
-      if @issue.description.present?
-        description = "```#{@issue.description.gsub(/`/, "\u200b`")}```"
-        EmbedObjects::EmbedField.new('Description', description, false).to_hash
-      end
+      return unless @issue.description.present?
+
+      truncated_description = truncate_text(@issue.description, DESCRIPTION_LIMIT)
+      description = "```#{truncated_description.gsub(/`/, "\u200b`")}```"
+
+      EmbedObjects::EmbedField.new('Description', description, false).to_hash
     end
 
     def resolve_absolute_url
@@ -26,55 +31,55 @@ module RedmineDiscord
                             'status_id', 'done_ratio', 'estimated_hours',
                             'category_id', 'fixed_version_id', 'parent_id']
 
-      display_attributes.map {|attribute_name|
-        value = value_for attribute_name rescue nil
+      display_attributes.map do |attribute_name|
+        value = value_for(attribute_name) rescue nil
 
-        if attribute_name == 'parent_id'
-          value = value.blank? ? nil : "[##{value.id}](#{url_of value.id})"
-        else
-          value = value.blank? ? nil : "`#{value}`"
-        end
+        next if value.blank?
 
-        EmbedObjects::EmbedField.new(attribute_name, value, true).to_hash if value
-      }
+        value = attribute_name == 'parent_id' ? "[##{value.id}](#{url_of(value.id)})" : "`#{value}`"
+        EmbedObjects::EmbedField.new(attribute_name, value, true).to_hash
+      end.compact
     end
 
     def to_diff_fields
-      @issue.attributes.keys.map{|key| get_diff_field_for key}.compact
+      @issue.attributes.keys.map { |key| get_diff_field_for(key) }.compact
     end
 
     private
 
-	def get_diff_field_for(attribute_name)
-	  new_value = value_for(attribute_name)
-	  old_value = old_value_for(attribute_name)
+    def get_diff_field_for(attribute_name)
+      new_value = value_for(attribute_name)
+      old_value = old_value_for(attribute_name)
 
-	  attribute_root_name = attribute_name.chomp('_id')
+      attribute_root_name = attribute_name.chomp('_id')
 
-	  case attribute_root_name
-	  when 'description'
-		# Get current and previous values of the description
-		new_value = @issue.description.to_s.strip
-		old_value = @issue.description_was.to_s.strip
+      return nil if new_value == old_value
 
-		if new_value != old_value
-		  # If descriptions differ, format the diff output with proper formatting
-		  description_diff = "```diff\n- #{old_value}\n+ #{new_value}\n```"
-		  EmbedObjects::EmbedField.new(attribute_root_name, description_diff, true).to_hash
-		else
-		  # If no change, return nil to omit this field from the diff
-		  nil
-		end
-	  when 'parent'
-		new_value, old_value = [new_value, old_value].map do |issue|
-		  issue.blank? ? '`N/A`' : "[##{issue.id}](#{url_of(issue.id)})"
-		end
-		EmbedObjects::EmbedField.new(attribute_root_name, "#{old_value} => #{new_value}", true).to_hash
-	  else
-		embed_value = "`#{old_value || 'N/A'}` => `#{new_value || 'N/A'}`"
-		EmbedObjects::EmbedField.new(attribute_root_name, embed_value, true).to_hash
-	  end unless new_value == old_value
-	end
+      case attribute_root_name
+      when 'description'
+        new_value = @issue.description.to_s.strip
+        old_value = @issue.description_was.to_s.strip
+
+        if new_value != old_value
+          description_diff = "```diff\n- #{truncate_text(old_value, DIFF_LIMIT / 2)}\n+ #{truncate_text(new_value, DIFF_LIMIT / 2)}```"
+          EmbedObjects::EmbedField.new(attribute_root_name, description_diff, false).to_hash
+        end
+      when 'parent'
+        new_value, old_value = [new_value, old_value].map do |issue|
+          issue.blank? ? '`N/A`' : "[##{issue.id}](#{url_of(issue.id)})"
+        end
+        EmbedObjects::EmbedField.new(attribute_root_name, "#{old_value} => #{new_value}", true).to_hash
+      else
+        embed_value = "`#{old_value || 'N/A'}` => `#{new_value || 'N/A'}`"
+        EmbedObjects::EmbedField.new(attribute_root_name, embed_value, true).to_hash
+      end
+    end
+
+    def truncate_text(text, max_length)
+      return text if text.length <= max_length
+
+      "#{text[0, max_length]} [...]"
+    end
 
     def value_for(attribute_name)
       if attribute_name == 'root_id'
@@ -89,38 +94,25 @@ module RedmineDiscord
     def old_value_for(attribute_name)
       attribute_root_name = attribute_name.chomp('_id')
 
-      if attribute_root_name == attribute_name
-        return @issue.send(attribute_name + '_was')
-      end
+      return @issue.send(attribute_name + '_was') if attribute_root_name == attribute_name
 
-      if attribute_root_name == 'assigned_to'
-        return User.find(@issue.assigned_to_id_was) rescue nil
-      end
+      return User.find(@issue.assigned_to_id_was) if attribute_root_name == 'assigned_to'
 
-      if @issue.respond_to? "#{attribute_root_name}_was"
-        return @issue.send(attribute_root_name + '_was')
-      end
+      return @issue.send(attribute_root_name + '_was') if @issue.respond_to?("#{attribute_root_name}_was")
 
-      old_id = @issue.send(attribute_root_name + '_id_was')
+      old_id = @issue.send("#{attribute_root_name}_id_was")
 
       case attribute_root_name
-        when 'project'
-          Project.find(old_id)
-        when 'category'
-          IssueCategory.find(old_id)
-        when 'priority'
-          IssuePriority.find(old_id)
-        when 'fixed_version'
-          Version.find(old_id)
-        when 'parent'
-          Issue.find(old_id)
-        when 'author'
-          @issue.author
-        when 'root'
-          @issue.root_id
-        else
-          puts "unknown attribute name given : #{attribute_root_name}"
-          @issue.send(attribute_root_name)
+      when 'project' then Project.find(old_id)
+      when 'category' then IssueCategory.find(old_id)
+      when 'priority' then IssuePriority.find(old_id)
+      when 'fixed_version' then Version.find(old_id)
+      when 'parent' then Issue.find(old_id)
+      when 'author' then @issue.author
+      when 'root' then @issue.root_id
+      else
+        puts "unknown attribute name given: #{attribute_root_name}"
+        @issue.send(attribute_root_name)
       end rescue nil
     end
 
