@@ -14,8 +14,8 @@ Redmine::Plugin.register :redmine_discord do
 
   settings({
     default: {
-        'webhook_avatar_url' => 'https://raw.githubusercontent.com/Eliminationzx/redmine_discord/gh-pages/quest_icon.jpg',
-        'webhook_username' => 'WoW Task Bot'
+        'webhook_avatar_url' => 'https://raw.githubusercontent.com/kory33/redmine_discord/gh-pages/redmine_icon.png',
+        'webhook_username' => 'Redmine Notification'
     },
     partial: 'settings/redmine_discord'
   })
