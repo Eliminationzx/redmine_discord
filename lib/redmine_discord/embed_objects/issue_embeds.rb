@@ -5,6 +5,8 @@ require_relative '../wraps/wrapped_journal'
 module RedmineDiscord
   module EmbedObjects::IssueEmbeds
     class NewIssueEmbed
+	  MAX_DESCRIPTION_LENGTH = 1000  # Limit to avoid Discord's 1024-char field cap
+	  
       def initialize(context)
         @wrapped_issue = Wraps::WrappedIssue.new context[:issue]
       end
@@ -13,12 +15,10 @@ module RedmineDiscord
         # prepare fields in heading / remove nil fields
         fields = @wrapped_issue.to_creation_information_fields.compact
 
-        description_field = @wrapped_issue.to_description_field
+        description_field = to_truncated_description_field
 
-        if description_field != nil
-          fields.push EmbedObjects::FieldHelper::get_separator_field unless fields.empty?
-          fields.push description_field
-        end
+        fields.push EmbedObjects::FieldHelper::get_separator_field unless fields.empty?
+        fields.push(description_field) if description_field
 
         heading_url = @wrapped_issue.resolve_absolute_url
 
@@ -34,6 +34,15 @@ module RedmineDiscord
 
       def get_fields_color
         65280
+      end
+	  
+	  def to_truncated_description_field
+        description = @wrapped_issue.to_description_field&.dig(:value)
+        return nil if description.nil? || description.strip.empty?
+
+        truncated_description = description.length > MAX_DESCRIPTION_LENGTH ? "#{description[0...MAX_DESCRIPTION_LENGTH]}..." : description
+
+        { name: "Description", value: truncated_description }
       end
     end
 
