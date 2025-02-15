@@ -45,26 +45,36 @@ module RedmineDiscord
 
     private
 
-    def get_diff_field_for(attribute_name)
-      new_value = value_for attribute_name
-      old_value = old_value_for attribute_name
+	def get_diff_field_for(attribute_name)
+	  new_value = value_for(attribute_name)
+	  old_value = old_value_for(attribute_name)
 
-      attribute_root_name = attribute_name.chomp '_id'
+	  attribute_root_name = attribute_name.chomp('_id')
 
-      case attribute_root_name
-        when 'description'
-          # TODO implement diff for description
-          nil
-        when 'parent'
-          new_value, old_value = [new_value, old_value].map do |issue|
-            issue.blank? ? '`N/A`' : "[##{issue.id}](#{url_of issue.id})"
-          end
-          EmbedObjects::EmbedField.new(attribute_root_name, "#{old_value} => #{new_value}", true).to_hash
-        else
-          embed_value = "`#{old_value || 'N/A'}` => `#{new_value || 'N/A'}`"
-          EmbedObjects::EmbedField.new(attribute_root_name, embed_value, true).to_hash
-      end unless new_value == old_value
-    end
+	  case attribute_root_name
+	  when 'description'
+		# Get current and previous values of the description
+		new_value = @issue.description.to_s.strip
+		old_value = @issue.description_was.to_s.strip
+
+		if new_value != old_value
+		  # If descriptions differ, format the diff output with proper formatting
+		  description_diff = "```diff\n- #{old_value}\n+ #{new_value}\n```"
+		  EmbedObjects::EmbedField.new(attribute_root_name, description_diff, true).to_hash
+		else
+		  # If no change, return nil to omit this field from the diff
+		  nil
+		end
+	  when 'parent'
+		new_value, old_value = [new_value, old_value].map do |issue|
+		  issue.blank? ? '`N/A`' : "[##{issue.id}](#{url_of(issue.id)})"
+		end
+		EmbedObjects::EmbedField.new(attribute_root_name, "#{old_value} => #{new_value}", true).to_hash
+	  else
+		embed_value = "`#{old_value || 'N/A'}` => `#{new_value || 'N/A'}`"
+		EmbedObjects::EmbedField.new(attribute_root_name, embed_value, true).to_hash
+	  end unless new_value == old_value
+	end
 
     def value_for(attribute_name)
       if attribute_name == 'root_id'
